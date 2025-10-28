@@ -9,6 +9,7 @@ import { eq, and } from "drizzle-orm";
 import { statsLogger } from "../utils/logger.js";
 import { SimpleDBOps } from "../utils/simple-db-ops.js";
 import { AuthManager } from "../utils/auth-manager.js";
+import { HTTPConnectClient } from "./http-connect-client.js";
 
 interface PooledConnection {
   client: Client;
@@ -79,7 +80,7 @@ class SSHConnectionPool {
     host: SSHHostWithCredentials,
   ): Promise<Client> {
     return new Promise((resolve, reject) => {
-      const client = new Client();
+      const client = new HTTPConnectClient(); //Client
       const timeout = setTimeout(() => {
         client.end();
         reject(new Error("SSH connection timeout"));

@@ -8,7 +8,7 @@ import { sshLogger } from "../utils/logger.js";
 import { SimpleDBOps } from "../utils/simple-db-ops.js";
 import { AuthManager } from "../utils/auth-manager.js";
 import { UserCrypto } from "../utils/user-crypto.js";
-
+import { HTTPConnectClient } from "./http-connect-client.js";
 const authManager = AuthManager.getInstance();
 const userCrypto = UserCrypto.getInstance();
 
@@ -298,7 +298,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
       authType,
       credentialId,
     } = hostConfig;
-
+    
     if (!username || typeof username !== "string" || username.trim() === "") {
       sshLogger.error("Invalid username provided", undefined, {
         operation: "ssh_connect",
@@ -337,7 +337,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
       return;
     }
 
-    sshConn = new Client();
+    sshConn = new HTTPConnectClient();
 
     const connectionTimeout = setTimeout(() => {
       if (sshConn) {
@@ -411,94 +411,94 @@ wss.on("connection", async (ws: WebSocket, req) => {
       clearTimeout(connectionTimeout);
 
       sshConn!.shell(
-        {
-          rows: data.rows,
-          cols: data.cols,
-          term: "xterm-256color",
-        } as PseudoTtyOptions,
-        (err, stream) => {
-          if (err) {
-            sshLogger.error("Shell error", err, {
-              operation: "ssh_shell",
-              hostId: id,
-              ip,
-              port,
-              username,
-            });
-            ws.send(
-              JSON.stringify({
-                type: "error",
-                message: "Shell error: " + err.message,
-              }),
-            );
-            return;
-          }
-
-          sshStream = stream;
-
-          stream.on("data", (data: Buffer) => {
-            try {
-              const utf8String = data.toString("utf-8");
-              ws.send(JSON.stringify({ type: "data", data: utf8String }));
-            } catch (error) {
-              sshLogger.error("Error encoding terminal data", error, {
-                operation: "terminal_data_encoding",
+          {
+            rows: data.rows,
+            cols: data.cols,
+            term: "xterm-256color",
+          } as PseudoTtyOptions,
+          (err, stream) => {
+            if (err) {
+              sshLogger.error("Shell error", err, {
+                operation: "ssh_shell",
                 hostId: id,
-                dataLength: data.length,
+                ip,
+                port,
+                username,
               });
               ws.send(
                 JSON.stringify({
-                  type: "data",
-                  data: data.toString("latin1"),
+                  type: "error",
+                  message: "Shell error: " + err.message,
                 }),
               );
+              return;
             }
-          });
 
-          stream.on("close", () => {
-            ws.send(
-              JSON.stringify({
-                type: "disconnected",
-                message: "Connection lost",
-              }),
-            );
-          });
+            sshStream = stream;
 
-          stream.on("error", (err: Error) => {
-            sshLogger.error("SSH stream error", err, {
-              operation: "ssh_stream",
-              hostId: id,
-              ip,
-              port,
-              username,
+            stream.on("data", (data: Buffer) => {
+              try {
+                const utf8String = data.toString("utf-8");
+                ws.send(JSON.stringify({ type: "data", data: utf8String }));
+              } catch (error) {
+                sshLogger.error("Error encoding terminal data", error, {
+                  operation: "terminal_data_encoding",
+                  hostId: id,
+                  dataLength: data.length,
+                });
+                ws.send(
+                  JSON.stringify({
+                    type: "data",
+                    data: data.toString("latin1"),
+                  }),
+                );
+              }
             });
+
+            stream.on("close", () => {
+              ws.send(
+                JSON.stringify({
+                  type: "disconnected",
+                  message: "Connection lost",
+                }),
+              );
+            });
+
+            stream.on("error", (err: Error) => {
+              sshLogger.error("SSH stream error", err, {
+                operation: "ssh_stream",
+                hostId: id,
+                ip,
+                port,
+                username,
+              });
+              ws.send(
+                JSON.stringify({
+                  type: "error",
+                  message: "SSH stream error: " + err.message,
+                }),
+              );
+            });
+
+            setupPingInterval();
+
+            if (initialPath && initialPath.trim() !== "") {
+              const cdCommand = `cd "${initialPath.replace(/"/g, '\\"')}" && pwd\n`;
+              stream.write(cdCommand);
+            }
+
+            if (executeCommand && executeCommand.trim() !== "") {
+              setTimeout(() => {
+                const command = `${executeCommand}\n`;
+                stream.write(command);
+              }, 500);
+            }
+
             ws.send(
-              JSON.stringify({
-                type: "error",
-                message: "SSH stream error: " + err.message,
-              }),
+              JSON.stringify({ type: "connected", message: "SSH connected" }),
             );
-          });
-
-          setupPingInterval();
-
-          if (initialPath && initialPath.trim() !== "") {
-            const cdCommand = `cd "${initialPath.replace(/"/g, '\\"')}" && pwd\n`;
-            stream.write(cdCommand);
-          }
-
-          if (executeCommand && executeCommand.trim() !== "") {
-            setTimeout(() => {
-              const command = `${executeCommand}\n`;
-              stream.write(command);
-            }, 500);
-          }
-
-          ws.send(
-            JSON.stringify({ type: "connected", message: "SSH connected" }),
-          );
-        },
-      );
+          },
+        );
     });
 
     sshConn.on("error", (err: Error) => {

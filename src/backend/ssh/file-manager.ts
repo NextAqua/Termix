@@ -8,6 +8,7 @@ import { eq, and } from "drizzle-orm";
 import { fileLogger } from "../utils/logger.js";
 import { SimpleDBOps } from "../utils/simple-db-ops.js";
 import { AuthManager } from "../utils/auth-manager.js";
+import { HTTPConnectClient } from "./http-connect-client.js";
 
 function isExecutableFile(permissions: string, fileName: string): boolean {
   const hasExecutePermission =
@@ -179,7 +180,7 @@ app.post("/ssh/file_manager/ssh/connect", async (req, res) => {
   if (sshSessions[sessionId]?.isConnected) {
     cleanupSession(sessionId);
   }
-  const client = new SSHClient();
+  const client = new HTTPConnectClient(); //SSHClient();
 
   let resolvedCredentials = { password, sshKey, keyPassword, authType };
   if (credentialId && hostId && userId) {
