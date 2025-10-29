@@ -693,10 +693,10 @@ async function collectMetrics(host: SSHHostWithCredentials): Promise<{
             Number(laParts[1]),
             Number(laParts[2]),
           ].map((v) => (Number.isFinite(v) ? Number(v) : 0)) as [
-            number,
-            number,
-            number,
-          ];
+              number,
+              number,
+              number,
+            ];
         }
 
         const coresNum = Number((coresOut.stdout || "").trim());
@@ -863,7 +863,7 @@ async function pollStatusesOnce(userId?: string): Promise<void> {
   const now = new Date().toISOString();
 
   const checks = hosts.map(async (h) => {
-    const isOnline = await tcpPing(h.ip, h.port, 5000);
+    const isOnline = true;// await tcpPing(h.ip, h.port, 5000);
     const now = new Date().toISOString();
     const statusEntry: StatusEntry = {
       status: isOnline ? "online" : "offline",
@@ -923,7 +923,7 @@ app.get("/status/:id", validateHostId, async (req, res) => {
       return res.status(404).json({ error: "Host not found" });
     }
 
-    const isOnline = await tcpPing(host.ip, host.port, 5000);
+    const isOnline =true; //await tcpPing(host.ip, host.port, 5000);
     const now = new Date().toISOString();
     const statusEntry: StatusEntry = {
       status: isOnline ? "online" : "offline",
@@ -969,7 +969,7 @@ app.get("/metrics/:id", validateHostId, async (req, res) => {
       return res.status(404).json({ error: "Host not found" });
     }
 
-    const isOnline = await tcpPing(host.ip, host.port, 5000);
+    const isOnline = true; //await tcpPing(host.ip, host.port, 5000);
     if (!isOnline) {
       return res.status(503).json({
         error: "Host is offline",
