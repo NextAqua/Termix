@@ -155,7 +155,7 @@ export class HTTPConnectClient extends Client {
 
 
 
-    if (config.host.indexOf(this.proxyOptions.proxyHost) > -1) {
+    if (config.host &&config.host.indexOf(this.proxyOptions.proxyHost) > -1) {
       // Create a socket using our transport
       const sock = transport();
 
