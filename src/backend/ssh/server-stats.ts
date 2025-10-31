@@ -9,7 +9,7 @@ import { eq, and } from "drizzle-orm";
 import { statsLogger } from "../utils/logger.js";
 import { SimpleDBOps } from "../utils/simple-db-ops.js";
 import { AuthManager } from "../utils/auth-manager.js";
-import { HTTPConnectClient } from "./http-connect-client.js";
+import { HTTPConnectClient, tcpPingProxy } from "./http-connect-client.js";
 
 interface PooledConnection {
   client: Client;
@@ -124,7 +124,7 @@ class SSHConnectionPool {
         if (!conn.inUse && now - conn.lastUsed > maxAge) {
           try {
             conn.client.end();
-          } catch {}
+          } catch { }
           return false;
         }
         return true;
@@ -144,7 +144,7 @@ class SSHConnectionPool {
       for (const conn of connections) {
         try {
           conn.client.end();
-        } catch {}
+        } catch { }
       }
     }
     this.connections.clear();
@@ -182,7 +182,7 @@ class RequestQueue {
       if (request) {
         try {
           await request();
-        } catch (error) {}
+        } catch (error) { }
       }
     }
 
@@ -830,7 +830,7 @@ function tcpPing(
       settled = true;
       try {
         socket.destroy();
-      } catch {}
+      } catch { }
       resolve(result);
     };
 
@@ -839,7 +839,19 @@ function tcpPing(
     socket.once("connect", () => onDone(true));
     socket.once("timeout", () => onDone(false));
     socket.once("error", () => onDone(false));
-    socket.connect(port, host);
+    if ((process.env.PROXY_HOST || "") && host.indexOf(process.env.PROXY_HOST || "") > -1) {
+      socket.destroy();
+      tcpPingProxy({
+        targetHost: host,
+        targetPort: port,
+      }).then((result: boolean) => {
+        onDone(result);
+      });
+    }
+    else {
+      socket.connect(port, host);
+    }
+
   });
 }
 
@@ -863,7 +875,7 @@ async function pollStatusesOnce(userId?: string): Promise<void> {
   const now = new Date().toISOString();
 
   const checks = hosts.map(async (h) => {
-    const isOnline = true;// await tcpPing(h.ip, h.port, 5000);
+    const isOnline = await tcpPing(h.ip, h.port, 5000);
     const now = new Date().toISOString();
     const statusEntry: StatusEntry = {
       status: isOnline ? "online" : "offline",
@@ -923,7 +935,7 @@ app.get("/status/:id", validateHostId, async (req, res) => {
       return res.status(404).json({ error: "Host not found" });
     }
 
-    const isOnline =true; //await tcpPing(host.ip, host.port, 5000);
+    const isOnline = await tcpPing(host.ip, host.port, 5000);
     const now = new Date().toISOString();
     const statusEntry: StatusEntry = {
       status: isOnline ? "online" : "offline",
@@ -969,7 +981,7 @@ app.get("/metrics/:id", validateHostId, async (req, res) => {
       return res.status(404).json({ error: "Host not found" });
     }
 
-    const isOnline = true; //await tcpPing(host.ip, host.port, 5000);
+    const isOnline = await tcpPing(host.ip, host.port, 5000);
     if (!isOnline) {
       return res.status(503).json({
         error: "Host is offline",

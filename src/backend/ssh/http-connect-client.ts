@@ -144,18 +144,16 @@ export class HTTPConnectClient extends Client {
   }
 
   connect(config: any) {
-    // Create transport function
-    const transport = createHTTPConnectTransport({
-      proxyHost: this.proxyOptions.proxyHost,
-      proxyPort: this.proxyOptions.proxyPort,
-      targetHost: config.host,
-      targetPort: config.port,
-      proxyAuth: this.proxyOptions.proxyAuth
-    });
 
-
-
-    if (config.host &&config.host.indexOf(this.proxyOptions.proxyHost) > -1) {
+    if (config.host && config.host.indexOf(this.proxyOptions.proxyHost) > -1) {
+      // Create transport function
+      const transport = createHTTPConnectTransport({
+        proxyHost: this.proxyOptions.proxyHost,
+        proxyPort: this.proxyOptions.proxyPort,
+        targetHost: config.host,
+        targetPort: config.port,
+        proxyAuth: this.proxyOptions.proxyAuth
+      });
       // Create a socket using our transport
       const sock = transport();
 
@@ -174,4 +172,110 @@ export class HTTPConnectClient extends Client {
     }
     return super.connect(config);
   }
+}
+
+
+export const tcpPingProxy =async (options: any) => {
+  const {
+    targetHost,
+    targetPort
+  } = options;
+
+  return new Promise((resolve) => {
+    const proxyHost = process.env.PROXY_HOST || "";
+    const proxyPort = process.env.PROXY_PORT || 80;
+    const proxyAuth = process.env.PROXY_AUTH || "";
+    const socket = net.createConnection({
+      host: proxyHost,
+      port: Number(proxyPort)
+    });
+
+    // Set connection timeout
+    const connectionTimeout = setTimeout(() => {
+      console.error('Connection timed out after 30 seconds');
+      socket.destroy(new Error('Connection timeout'));
+    }, 30000);
+
+    // Handle socket events
+    socket.on('connect', () => {
+      console.log('Connected to proxy server');
+
+      // Build HTTP CONNECT request
+      let connectRequest = [
+        `CONNECT ${targetHost}:${targetPort} HTTP/1.1`,
+        `Host: ${targetHost}:${targetPort}`,
+        'Connection: keep-alive',
+        'User-Agent: SSH-Client'
+      ];
+
+      // Add proxy authentication if provided
+      if (proxyAuth) {
+        const authHeader = `Basic ${Buffer.from(proxyAuth).toString('base64')}`;
+        connectRequest.push(`Proxy-Authorization: ${authHeader}`);
+      }
+
+      // Finalize request
+      connectRequest.push('', '');
+
+      console.log('Sending HTTP CONNECT request to proxy...');
+      socket.write(connectRequest.join('\r\n'));
+
+      // Set up one-time handler for proxy response
+      let buffer = '';
+      let headersParsed = false;
+
+      const responseHandler = (data: any) => {
+        // Clear the connection timeout once we get a response
+        clearTimeout(connectionTimeout);
+
+        buffer += data.toString();
+
+        // Only log the headers if we haven't parsed them yet
+        if (!headersParsed && buffer.includes('\r\n\r\n')) {
+          const headers = buffer.split('\r\n\r\n')[0];
+          console.log('Proxy response headers:', headers);
+          headersParsed = true;
+        }
+
+        if (buffer.includes('\r\n\r\n')) {
+          // Check if connection was successful
+          if (buffer.includes('HTTP/1.1 200')) {
+            console.log('HTTP CONNECT successful, establishing SSH connection...');
+
+            // Remove the handler as we're now connected
+            socket.removeListener('data', responseHandler);
+            clearTimeout(connectionTimeout);
+            socket.destroy();
+            resolve(true);
+          } else {
+            clearTimeout(connectionTimeout);
+            socket.destroy();
+            resolve(false);
+          }
+        }
+      };
+
+      socket.on('data', responseHandler);
+    });
+
+    socket.on('error', (err: any) => {
+     clearTimeout(connectionTimeout);
+            socket.destroy();
+            resolve(false);
+    });
+
+    socket.on('end', () => {
+      console.log('Proxy connection ended');
+      clearTimeout(connectionTimeout);
+            socket.destroy();
+            resolve(false);
+    });
+
+    socket.on('close', (hadError) => {
+      console.log(`Proxy connection closed${hadError ? ' with error' : ''}`);
+      clearTimeout(connectionTimeout);
+    });
+
+
+  });
 }
